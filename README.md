@@ -75,7 +75,7 @@ ezgraph /path/to/project --dump
 
 | Feature | Description |
 |---------|-------------|
-| **Functions** | Name, params, return type, location, docstring |
+| **Functions** | Name, params, return type, location, docstring, complexity scores |
 | **Classes** | Structs, enums, traits, interfaces, modules |
 | **Call Graph** | Who calls whom — full caller/callee edges |
 | **Subsystems** | Auto-classified from directory structure |
@@ -83,8 +83,12 @@ ezgraph /path/to/project --dump
 | **Constants** | UPPER_CASE constants, typed consts, finals |
 | **Cross-edges** | Cross-subsystem dependency map |
 | **Sections** | Code sections marked with `// SECTION` or `# SECTION` |
+| **Complexity** | Cyclomatic + cognitive complexity per function |
+| **Semantic Index** | TF-IDF vectors for meaning-based search |
 
-## MCP Tools (12)
+## MCP Tools (24)
+
+### Core Graph (12)
 
 | Tool | Description |
 |------|-------------|
@@ -101,6 +105,133 @@ ezgraph /path/to/project --dump
 | `ezgraph_hotspots` | Most connected functions (highest fan-in + fan-out) |
 | `ezgraph_architecture` | Architecture map: subsystems and cross-dependencies |
 
+### Impact & Quality (4)
+
+| Tool | Description |
+|------|-------------|
+| `ezgraph_impact` | Blast radius analysis — change a function, see everything affected |
+| `ezgraph_deadcode` | Find functions with zero callers + LOC waste estimate |
+| `ezgraph_clones` | Detect near-duplicate functions (token Jaccard similarity) |
+| `ezgraph_diagram` | Auto-generate Mermaid or D2 architecture diagrams |
+
+### Intelligence (4)
+
+| Tool | Description |
+|------|-------------|
+| `ezgraph_complexity` | Cyclomatic + cognitive complexity ranking |
+| `ezgraph_complexity_velocity` | Track complexity changes over git history |
+| `ezgraph_semantic` | Semantic search — find functions by meaning, not name |
+| `ezgraph_federation` | Multi-repo federated search across codebases |
+
+### Tier 3 — AI-Native (4)
+
+| Tool | Description |
+|------|-------------|
+| `ezgraph_ask` | Natural language questions — auto-routes to the right analysis |
+| `ezgraph_diff` | Git-aware graph diff: changed functions, blast radius, risk |
+| `ezgraph_pr_review` | Auto-generate PR review context with risk assessment |
+| `ezgraph_runtime` | Correlate OpenTelemetry traces with static call graph |
+
+## Features
+
+### Impact Analysis
+
+Change a function? EZgraph tells you exactly what breaks:
+
+```
+ezgraph_impact("parse_request")
+→ 47 functions affected across 5 subsystems
+→ Risk: HIGH
+→ Subsystems: api, auth, middleware, handlers, tests
+```
+
+### Auto Architecture Diagrams
+
+Generate always-accurate Mermaid diagrams from live code:
+
+```
+ezgraph_diagram("architecture")
+→ graph TD
+      api["api\n120 fns | 3400 LOC"]
+      auth["auth\n45 fns | 1200 LOC"]
+      api -->|12| auth
+```
+
+### Dead Code & Clone Detection
+
+```
+ezgraph_deadcode()
+→ 847/3200 functions unreachable (26.5%)
+→ 12,400 LOC wasted
+
+ezgraph_clones()
+→ adam_step <-> adamw_step (88.5% similar)
+→ tcp_recv <-> udp_recv (83.3% similar)
+```
+
+### Semantic Search
+
+Find functions by what they do, not what they're named:
+
+```
+ezgraph_semantic("handle user authentication")
+→ verify_token (auth/jwt.py:45) score=14.2
+→ check_session (middleware/session.rs:120) score=11.8
+→ validate_credentials (api/login.go:33) score=9.4
+```
+
+### Natural Language Queries
+
+```
+ezgraph_ask("what is the most complex code?")
+→ eval_stmt: cyclomatic=189, cognitive=198
+→ lex: cyclomatic=171, cognitive=182
+
+ezgraph_ask("show me dead code")
+→ 847 functions with zero callers...
+
+ezgraph_ask("who calls parse_request?")
+→ handle_http, route_api, middleware_chain...
+```
+
+### Git Time-Travel & PR Review
+
+```
+ezgraph_diff("main", "feature-branch")
+→ 12 files changed, 34 functions modified
+→ Blast radius: 156 functions affected
+→ Risk: HIGH
+→ New cross-subsystem edge: api -> payments (didn't exist before!)
+
+ezgraph_pr_review()
+→ **8 files changed**, **23 functions modified**
+→ **Blast radius**: 89 functions potentially affected
+→ **Risk**: MEDIUM
+→ **New cross-subsystem edges**: auth -> billing
+→ **Complexity in changed code**: 45
+```
+
+### Multi-Repo Federation
+
+Search across all your repos at once:
+
+```
+ezgraph_federation(query="authenticate", repos=["/app/api", "/app/auth", "/app/gateway"])
+→ api: 3 matches
+→ auth: 12 matches
+→ gateway: 5 matches
+```
+
+### Runtime Correlation
+
+Connect static analysis to production reality:
+
+```
+ezgraph_runtime(trace_dir="traces/")
+→ Hot paths: handle_request (45,000 calls, avg 2.3ms)
+→ Cold code: legacy_handler (0 invocations — truly dead)
+```
+
 ## Auto-Reindex
 
 EZgraph watches for file changes and a `.graph-dirty` sentinel file. Touch `.graph-dirty` in your project root (e.g., from a git post-commit hook) and the graph rebuilds automatically on the next query.
@@ -116,9 +247,9 @@ touch .graph-dirty
 |-------------|-------|-----------|------------|
 | Small (1K LOC) | ~10 | ~40 | <0.1s |
 | Medium (50K LOC) | ~200 | ~2,000 | ~0.5s |
-| Large (360K LOC) | ~550 | ~16,000 | ~2s |
+| Large (360K LOC) | ~550 | ~16,800 | ~2.2s |
 
-Zero dependencies. Pure Python. Works everywhere Python 3.10+ runs.
+Zero dependencies. Pure Python 3.10+. Works everywhere.
 
 ## How It Works
 
@@ -126,8 +257,9 @@ Zero dependencies. Pure Python. Works everywhere Python 3.10+ runs.
 2. **Detect** — identifies language from file extension, loads the right regex patterns
 3. **Extract** — pulls out functions, classes, sections, constants from each file
 4. **Connect** — builds a call graph by scanning function bodies for known function names
-5. **Classify** — auto-groups files into subsystems based on directory structure
-6. **Serve** — exposes everything through 12 MCP tools over JSON-RPC stdin/stdout
+5. **Analyze** — computes complexity scores, builds TF-IDF semantic index
+6. **Classify** — auto-groups files into subsystems based on directory structure
+7. **Serve** — exposes everything through 24 MCP tools over JSON-RPC stdin/stdout
 
 ## License
 

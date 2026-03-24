@@ -23,6 +23,7 @@ import glob as globmod
 import subprocess
 import struct
 import time
+import math
 from typing import Any, Optional
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -327,6 +328,8 @@ class EZgraph:
         self._detect_pipelines()
         self._extract_constants()
         self._build_cross_edges()
+        self._compute_complexity()
+        self._build_semantic_index()
         self.build_time = time.monotonic() - t0
 
     def _read_file(self, path):
@@ -898,6 +901,787 @@ class EZgraph:
                 return (k, f)
         return None
 
+    def _group_by(self, items, field):
+        groups = {}
+        for item in items:
+            k = item.get(field, '?')
+            groups[k] = groups.get(k, 0) + 1
+        return dict(sorted(groups.items(), key=lambda x: -x[1]))
+
+    # ── Complexity analysis ──────────────────────────────────────────
+
+    _BRANCH_RE = re.compile(
+        r'\b(if|elif|else\s+if|for|while|case|catch|except|match|guard)\b|&&|\|\||\?\s*\S')
+
+    def _compute_complexity(self):
+        """Compute cyclomatic + cognitive complexity for every function."""
+        for key, fn in self.functions.items():
+            lines = self._read_file(os.path.join(self.root, fn['file']))
+            s = fn['line_start'] - 1
+            e = fn['line_end'] or (s + 50)
+            body = '\n'.join(lines[s:min(e, len(lines))])
+            branches = len(self._BRANCH_RE.findall(body))
+            nesting = self._max_nesting(lines[s:min(e, len(lines))])
+            fn['complexity'] = branches + 1
+            fn['cognitive_complexity'] = branches + nesting
+            fn['lines_of_code'] = min(e, len(lines)) - s
+
+    def _max_nesting(self, lines):
+        max_depth = 0
+        base = None
+        for line in lines:
+            stripped = line.rstrip()
+            if not stripped:
+                continue
+            indent = len(stripped) - len(stripped.lstrip())
+            if base is None:
+                base = indent
+            depth = max(0, (indent - base) // 4)
+            max_depth = max(max_depth, depth)
+        return max_depth
+
+    # ── Semantic search index (TF-IDF, zero deps) ───────────────────
+
+    _CAMEL_RE = re.compile(r'[a-z]+|[A-Z][a-z]*|[A-Z]+(?=[A-Z]|$)|[0-9]+')
+
+    def _build_semantic_index(self):
+        """Build TF-IDF index for semantic search."""
+        self._semantic_docs = {}
+        df = {}
+        N = max(len(self.functions), 1)
+
+        for key, fn in self.functions.items():
+            tokens = self._tokenize_fn(fn)
+            self._semantic_docs[key] = tokens
+            for t in set(tokens):
+                df[t] = df.get(t, 0) + 1
+
+        self._idf = {t: math.log(N / (1 + c)) for t, c in df.items()}
+
+    def _tokenize_fn(self, fn):
+        parts = self._CAMEL_RE.findall(fn['name'])
+        parts += fn['name'].split('_')
+        parts += re.findall(r'\w+', fn.get('params', ''))
+        parts += re.findall(r'\w+', fn.get('doc', ''))
+        return [t.lower() for t in parts if len(t) > 1]
+
+    # ── Tier 1: Impact analysis ──────────────────────────────────────
+
+    def query_impact(self, name, depth=5):
+        """BFS through reverse call graph to assess blast radius."""
+        fn = self._find_fn(name)
+        if not fn:
+            return {'error': f'Function not found: {name}'}
+        key, finfo = fn
+
+        visited = set()
+        queue = [(key, 0)]
+        impacts = []
+        subs_affected = set()
+
+        while queue:
+            k, d = queue.pop(0)
+            if k in visited or d > depth:
+                continue
+            visited.add(k)
+            f = self.functions.get(k)
+            if not f:
+                continue
+            subs_affected.add(f['subsystem'])
+            impacts.append({
+                'function': f['name'], 'file': f['file'],
+                'line': f['line_start'], 'depth': d,
+                'subsystem': f['subsystem'], 'language': f['language'],
+            })
+            for caller in f.get('callers', []):
+                if caller not in visited:
+                    queue.append((caller, d + 1))
+
+        n = len(impacts)
+        risk = 'LOW' if n < 5 else 'MEDIUM' if n < 20 else 'HIGH' if n < 50 else 'CRITICAL'
+        return {
+            'root': finfo['name'], 'total_affected': n,
+            'subsystems_affected': sorted(subs_affected),
+            'risk': risk,
+            'depth_reached': max((i['depth'] for i in impacts), default=0),
+            'impacts': impacts[:100],
+        }
+
+    # ── Tier 1: Auto architecture diagrams ───────────────────────────
+
+    def query_diagram(self, target='architecture', fmt='mermaid'):
+        """Generate Mermaid or D2 diagram from graph data."""
+        if fmt == 'd2':
+            return self._diagram_d2(target)
+        return self._diagram_mermaid(target)
+
+    def _diagram_mermaid(self, target):
+        if target == 'architecture':
+            lines = ['graph TD']
+            for name, sub in self.subsystems.items():
+                safe = name.replace('"', "'")
+                label = f"{safe}\\n{sub['functions']} fns | {sub['lines']} LOC"
+                lines.append(f'    {name}["{label}"]')
+            edge_counts = {}
+            for e in self.cross_edges:
+                k = (e['from'], e['to'])
+                edge_counts[k] = edge_counts.get(k, 0) + 1
+            for (src, dst), count in sorted(edge_counts.items(), key=lambda x: -x[1])[:40]:
+                lines.append(f'    {src} -->|{count}| {dst}')
+            return {'format': 'mermaid', 'target': 'architecture', 'diagram': '\n'.join(lines)}
+
+        if target in self.subsystems:
+            lines = ['graph TD']
+            fns = [(k, f) for k, f in self.functions.items() if f['subsystem'] == target]
+            fns.sort(key=lambda x: len(x[1].get('callers', [])), reverse=True)
+            shown = set()
+            for key, fn in fns[:40]:
+                safe = fn['name'].replace('"', "'")
+                lines.append(f'    {fn["name"]}["{safe}"]')
+                shown.add(fn['name'])
+            for key, fn in fns[:40]:
+                for callee in fn.get('calls', [])[:5]:
+                    if callee in shown:
+                        lines.append(f'    {fn["name"]} --> {callee}')
+            return {'format': 'mermaid', 'target': target, 'diagram': '\n'.join(lines)}
+
+        fn = self._find_fn(target)
+        if fn:
+            key, finfo = fn
+            name = finfo['name']
+            lines = ['graph LR', f'    {name}["{name}"]:::root']
+            for caller in finfo.get('callers', [])[:15]:
+                cn = self.functions.get(caller, {}).get('name', caller)
+                lines.append(f'    {cn} --> {name}')
+            for callee in finfo.get('calls', [])[:15]:
+                lines.append(f'    {name} --> {callee}')
+            lines.append('    classDef root fill:#f96,stroke:#333')
+            return {'format': 'mermaid', 'target': target, 'diagram': '\n'.join(lines)}
+
+        return {'error': f'Target not found: {target}. Use "architecture", a subsystem name, or a function name.'}
+
+    def _diagram_d2(self, target):
+        if target == 'architecture':
+            lines = []
+            for name, sub in self.subsystems.items():
+                lines.append(f'{name}: "{name} ({sub["functions"]} fns, {sub["lines"]} LOC)"')
+            edge_counts = {}
+            for e in self.cross_edges:
+                k = (e['from'], e['to'])
+                edge_counts[k] = edge_counts.get(k, 0) + 1
+            for (src, dst), count in sorted(edge_counts.items(), key=lambda x: -x[1])[:40]:
+                lines.append(f'{src} -> {dst}: {count}')
+            return {'format': 'd2', 'target': 'architecture', 'diagram': '\n'.join(lines)}
+
+        fn = self._find_fn(target)
+        if fn:
+            key, finfo = fn
+            lines = [f'{finfo["name"]}.style.fill: "#f96"']
+            for caller in finfo.get('callers', [])[:15]:
+                cn = self.functions.get(caller, {}).get('name', caller)
+                lines.append(f'{cn} -> {finfo["name"]}')
+            for callee in finfo.get('calls', [])[:15]:
+                lines.append(f'{finfo["name"]} -> {callee}')
+            return {'format': 'd2', 'target': target, 'diagram': '\n'.join(lines)}
+
+        return {'error': f'Target not found: {target}'}
+
+    # ── Tier 1: Dead code detection ──────────────────────────────────
+
+    def query_deadcode(self):
+        """Find functions with zero callers (potential dead code)."""
+        entry_names = {'main', '__init__', '__main__', 'setup', 'teardown',
+                       'run', 'start', 'app', 'create_app', 'configure'}
+        entry_prefixes = ('test_', 'Test', 'handle_', 'on_', '__', 'route_',
+                          'api_', 'cmd_', 'do_', 'get_', 'set_', 'is_')
+
+        dead = []
+        for key, fn in self.functions.items():
+            if fn['callers']:
+                continue
+            name = fn['name']
+            if name in entry_names or any(name.startswith(p) for p in entry_prefixes):
+                continue
+            dead.append({
+                'name': name, 'file': fn['file'], 'line': fn['line_start'],
+                'subsystem': fn['subsystem'], 'language': fn['language'],
+                'complexity': fn.get('complexity', 0),
+                'lines_of_code': fn.get('lines_of_code', 0),
+            })
+
+        dead.sort(key=lambda x: x.get('lines_of_code', 0), reverse=True)
+        total_dead_loc = sum(d.get('lines_of_code', 0) for d in dead)
+        total_loc = sum(f['lines'] for f in self.files.values())
+
+        return {
+            'total_dead': len(dead),
+            'total_functions': len(self.functions),
+            'dead_percentage': round(100 * len(dead) / max(len(self.functions), 1), 1),
+            'dead_loc': total_dead_loc,
+            'total_loc': total_loc,
+            'dead_loc_percentage': round(100 * total_dead_loc / max(total_loc, 1), 1),
+            'by_subsystem': self._group_by(dead, 'subsystem'),
+            'functions': dead[:50],
+        }
+
+    # ── Tier 1: Clone detection ──────────────────────────────────────
+
+    _NOISE_TOKENS = frozenset({
+        'self', 'return', 'true', 'false', 'none', 'null', 'let', 'var',
+        'const', 'int', 'str', 'string', 'void', 'fn', 'def', 'func',
+        'function', 'if', 'else', 'for', 'while', 'class', 'struct',
+        'pub', 'mut', 'async', 'await', 'import', 'from', 'this',
+    })
+
+    def query_clones(self, threshold=0.7, min_lines=5):
+        """Detect near-duplicate functions using token Jaccard similarity."""
+        token_sets = {}
+        for key, fn in self.functions.items():
+            loc = fn.get('lines_of_code', 0)
+            if loc < min_lines:
+                continue
+            lines = self._read_file(os.path.join(self.root, fn['file']))
+            s = fn['line_start'] - 1
+            e = fn['line_end'] or (s + 50)
+            body = '\n'.join(lines[s:min(e, len(lines))])
+            tokens = set(re.findall(r'\b\w{2,}\b', body.lower())) - self._NOISE_TOKENS
+            if len(tokens) >= 3:
+                token_sets[key] = tokens
+
+        keys = list(token_sets.keys())
+        cap = min(len(keys), 500)  # O(n²) cap for performance
+        clones = []
+
+        for i in range(cap):
+            for j in range(i + 1, cap):
+                a, b = token_sets[keys[i]], token_sets[keys[j]]
+                intersection = len(a & b)
+                union = len(a | b)
+                if union == 0:
+                    continue
+                sim = intersection / union
+                if sim >= threshold:
+                    fa, fb = self.functions[keys[i]], self.functions[keys[j]]
+                    if fa['name'] == fb['name']:
+                        continue  # same name in different files isn't a "clone"
+                    clones.append({
+                        'function_a': fa['name'], 'file_a': fa['file'], 'line_a': fa['line_start'],
+                        'function_b': fb['name'], 'file_b': fb['file'], 'line_b': fb['line_start'],
+                        'similarity': round(sim, 3),
+                        'shared_tokens': intersection,
+                    })
+
+        clones.sort(key=lambda x: x['similarity'], reverse=True)
+        return {
+            'total_clones': len(clones),
+            'threshold': threshold,
+            'functions_analyzed': len(token_sets),
+            'clones': clones[:30],
+        }
+
+    # ── Tier 2: Complexity + velocity ────────────────────────────────
+
+    def query_complexity(self, name=None, n=20):
+        """Cyclomatic + cognitive complexity. Per-function or top-N ranking."""
+        if name:
+            fn = self._find_fn(name)
+            if not fn:
+                return {'error': f'Function not found: {name}'}
+            key, finfo = fn
+            c = finfo.get('complexity', 0)
+            risk = 'LOW' if c < 5 else 'MEDIUM' if c < 10 else 'HIGH' if c < 20 else 'CRITICAL'
+            return {
+                'name': finfo['name'], 'file': finfo['file'],
+                'line': finfo['line_start'],
+                'cyclomatic': c,
+                'cognitive': finfo.get('cognitive_complexity', 0),
+                'lines_of_code': finfo.get('lines_of_code', 0),
+                'callers': len(finfo['callers']),
+                'calls': len(finfo['calls']),
+                'risk': risk,
+            }
+
+        ranked = [(k, f) for k, f in self.functions.items() if f.get('complexity', 0) > 1]
+        ranked.sort(key=lambda x: x[1].get('complexity', 0), reverse=True)
+
+        complexities = [f.get('complexity', 0) for f in self.functions.values()]
+        avg = sum(complexities) / max(len(complexities), 1)
+
+        return {
+            'total_functions': len(self.functions),
+            'average_complexity': round(avg, 1),
+            'high_complexity_count': sum(1 for c in complexities if c >= 10),
+            'critical_complexity_count': sum(1 for c in complexities if c >= 20),
+            'top_complex': [{
+                'name': f['name'], 'file': f['file'], 'line': f['line_start'],
+                'cyclomatic': f.get('complexity', 0),
+                'cognitive': f.get('cognitive_complexity', 0),
+                'lines_of_code': f.get('lines_of_code', 0),
+                'subsystem': f['subsystem'],
+            } for _, f in ranked[:n]],
+        }
+
+    def query_complexity_velocity(self, n_commits=10):
+        """Track complexity changes over recent git history."""
+        try:
+            r = subprocess.run(
+                ['git', '-C', self.root, 'log', f'-{n_commits}',
+                 '--format=%H|%ci|%s', '--name-only'],
+                capture_output=True, text=True, timeout=10)
+        except Exception:
+            return {'error': 'Not a git repository or git not available'}
+        if r.returncode != 0:
+            return {'error': 'Not a git repository'}
+
+        commits = []
+        current = None
+        for line in r.stdout.strip().split('\n'):
+            if not line.strip():
+                current = None
+                continue
+            if '|' in line and len(line.split('|')) >= 3:
+                parts = line.split('|', 2)
+                current = {'hash': parts[0][:8], 'date': parts[1].strip()[:10],
+                           'message': parts[2][:60], 'files': []}
+                commits.append(current)
+            elif current is not None and line.strip():
+                current['files'].append(line.strip())
+
+        history = []
+        for c in commits[:n_commits]:
+            changed_fns = 0
+            total_complexity = 0
+            for fp in c['files']:
+                for fn_key, fn in self.functions.items():
+                    if fn['file'] == fp:
+                        changed_fns += 1
+                        total_complexity += fn.get('complexity', 0)
+            history.append({
+                'hash': c['hash'], 'date': c['date'], 'message': c['message'],
+                'files_changed': len(c['files']),
+                'functions_in_changed_files': changed_fns,
+                'complexity_in_changed_files': total_complexity,
+            })
+
+        return {'commits': len(history), 'history': history}
+
+    # ── Tier 2: Semantic search ──────────────────────────────────────
+
+    def query_semantic(self, query, n=20):
+        """Semantic search using TF-IDF similarity. Zero dependencies."""
+        if not hasattr(self, '_semantic_docs') or not self._semantic_docs:
+            return {'error': 'Semantic index not built'}
+
+        expanded = []
+        for t in re.findall(r'\w{2,}', query):
+            expanded.extend(self._CAMEL_RE.findall(t))
+            expanded.append(t)
+        query_tokens = list(set(t.lower() for t in expanded if len(t) > 1))
+
+        scores = []
+        for key, doc_tokens in self._semantic_docs.items():
+            doc_set = set(doc_tokens)
+            score = sum(self._idf.get(t, 0) for t in query_tokens if t in doc_set)
+            if score > 0:
+                fn = self.functions[key]
+                scores.append((key, fn, score))
+
+        scores.sort(key=lambda x: x[2], reverse=True)
+        return {
+            'query': query, 'tokens': query_tokens,
+            'results': [{
+                'name': fn['name'], 'file': fn['file'], 'line': fn['line_start'],
+                'subsystem': fn['subsystem'], 'language': fn['language'],
+                'doc': fn.get('doc', ''), 'score': round(s, 3),
+            } for _, fn, s in scores[:n]],
+        }
+
+    # ── Tier 2: Multi-repo federation ────────────────────────────────
+
+    def query_federation(self, repos, search_query):
+        """Federated search across multiple repositories."""
+        results = {}
+        all_fns = 0
+        all_files = 0
+        for repo_path in repos:
+            if not os.path.isdir(repo_path):
+                continue
+            name = os.path.basename(os.path.abspath(repo_path))
+            if repo_path == self.root or name == self.project_name:
+                r = self.query_search(search_query)
+                results[name] = r
+                all_fns += len(self.functions)
+                all_files += len(self.files)
+            else:
+                try:
+                    g = EZgraph(repo_path)
+                    g.build()
+                    r = g.query_search(search_query)
+                    if r.get('total_matches', 0) > 0:
+                        results[name] = r
+                    all_fns += len(g.functions)
+                    all_files += len(g.files)
+                except Exception as e:
+                    results[name] = {'error': str(e)}
+
+        return {
+            'repos_searched': len(repos),
+            'total_functions_across_repos': all_fns,
+            'total_files_across_repos': all_files,
+            'results': results,
+        }
+
+    def query_federation_overview(self, repos):
+        """Overview of multiple repositories."""
+        overviews = {}
+        for repo_path in repos:
+            if not os.path.isdir(repo_path):
+                continue
+            name = os.path.basename(os.path.abspath(repo_path))
+            if repo_path == self.root or name == self.project_name:
+                overviews[name] = self.query_overview()
+            else:
+                try:
+                    g = EZgraph(repo_path)
+                    g.build()
+                    overviews[name] = g.query_overview()
+                except Exception as e:
+                    overviews[name] = {'error': str(e)}
+
+        return {
+            'repos': len(overviews),
+            'total_functions': sum(o.get('total_functions', 0) for o in overviews.values() if isinstance(o, dict)),
+            'total_files': sum(o.get('total_files', 0) for o in overviews.values() if isinstance(o, dict)),
+            'overviews': overviews,
+        }
+
+    # ── Tier 3: Natural language queries ─────────────────────────────
+
+    def query_ask(self, question):
+        """Answer natural language questions about the codebase."""
+        q = question.lower().strip()
+
+        # Dead code
+        if any(w in q for w in ['dead code', 'unused', 'unreachable', 'never called', 'orphan']):
+            return {'interpreted_as': 'dead code detection', **self.query_deadcode()}
+
+        # Complexity
+        if any(w in q for w in ['complex', 'complicated', 'messy', 'spaghetti', 'worst code']):
+            return {'interpreted_as': 'complexity ranking', **self.query_complexity()}
+
+        # Clones
+        if any(w in q for w in ['duplicate', 'clone', 'copy-paste', 'similar function', 'redundant']):
+            return {'interpreted_as': 'clone detection', **self.query_clones()}
+
+        # Architecture
+        if any(w in q for w in ['architecture', 'structure', 'overview', 'how is', 'organized', 'layout']):
+            return {'interpreted_as': 'architecture overview', **self.query_architecture()}
+
+        # Hotspots
+        if any(w in q for w in ['hotspot', 'most called', 'most used', 'popular', 'critical path', 'bottleneck']):
+            return {'interpreted_as': 'hotspot analysis', **self.query_hotspots()}
+
+        # Diagram
+        if any(w in q for w in ['diagram', 'visual', 'draw', 'map', 'picture', 'chart']):
+            m = re.search(r'(?:of|for)\s+["\']?(\w+)', q)
+            target = m.group(1) if m else 'architecture'
+            return {'interpreted_as': f'diagram of {target}', **self.query_diagram(target)}
+
+        # Who/what calls X
+        m = re.search(r'(?:who|what)\s+calls?\s+["\']?(\w+)', q)
+        if m:
+            return {'interpreted_as': f'callers of {m.group(1)}', **self.query_callers(m.group(1))}
+
+        # Functions that call X
+        m = re.search(r'(?:functions?|methods?|code)\s+(?:that\s+)?calls?\s+["\']?(\w+)', q)
+        if m:
+            return {'interpreted_as': f'callers of {m.group(1)}', **self.query_callers(m.group(1))}
+
+        # Impact of X
+        m = re.search(r'(?:impact|blast|affect|risk|break|change|modify)\s+(?:of\s+)?(?:changing\s+)?["\']?(\w+)', q)
+        if m:
+            return {'interpreted_as': f'impact of {m.group(1)}', **self.query_impact(m.group(1))}
+
+        # Functions in subsystem X
+        m = re.search(r'(?:functions?|methods?|code)\s+in\s+["\']?(\w+)', q)
+        if m and m.group(1) in self.subsystems:
+            return {'interpreted_as': f'subsystem {m.group(1)}', **self.query_subsystem(m.group(1))}
+
+        # What does X do
+        m = re.search(r'(?:what\s+does|explain|describe|about)\s+["\']?(\w+)', q)
+        if m:
+            fn = self._find_fn(m.group(1))
+            if fn:
+                return {'interpreted_as': f'function lookup: {m.group(1)}', **self._fmt_fn(*fn)}
+
+        # Fallback: semantic search
+        return {'interpreted_as': 'semantic search', **self.query_semantic(question)}
+
+    # ── Tier 3: Git diff + time travel ───────────────────────────────
+
+    def query_diff(self, base='HEAD~1', head='HEAD'):
+        """Graph diff between two git refs — changed functions + blast radius."""
+        try:
+            r = subprocess.run(
+                ['git', '-C', self.root, 'diff', '--name-status', f'{base}..{head}'],
+                capture_output=True, text=True, timeout=10)
+            if r.returncode != 0:
+                return {'error': f'git diff failed: {r.stderr.strip()}'}
+        except Exception as e:
+            return {'error': f'git not available: {e}'}
+
+        changed_files = {}
+        for line in r.stdout.strip().split('\n'):
+            if not line.strip():
+                continue
+            parts = line.split('\t')
+            if len(parts) >= 2:
+                changed_files[parts[-1]] = parts[0]
+
+        # Parse diff hunks for line ranges
+        r2 = subprocess.run(
+            ['git', '-C', self.root, 'diff', '-U0', '--no-color', f'{base}..{head}'],
+            capture_output=True, text=True, timeout=10)
+
+        changed_ranges = {}
+        current_file = None
+        for line in r2.stdout.split('\n'):
+            if line.startswith('+++ b/'):
+                current_file = line[6:]
+            elif line.startswith('@@') and current_file:
+                m = re.search(r'\+(\d+)(?:,(\d+))?', line)
+                if m:
+                    start = int(m.group(1))
+                    count = int(m.group(2)) if m.group(2) else 1
+                    changed_ranges.setdefault(current_file, []).append(
+                        (start, start + count))
+
+        # Map changed ranges to functions
+        changed_fns = []
+        for fn_key, fn in self.functions.items():
+            fp = fn['file']
+            if fp not in changed_files:
+                continue
+            if fp in changed_ranges:
+                for (rs, re_) in changed_ranges[fp]:
+                    fn_end = fn['line_end'] or (fn['line_start'] + 50)
+                    if fn['line_start'] <= re_ and fn_end >= rs:
+                        changed_fns.append({
+                            'name': fn['name'], 'file': fp,
+                            'line': fn['line_start'], 'subsystem': fn['subsystem'],
+                            'complexity': fn.get('complexity', 0),
+                            'callers': len(fn['callers']), 'calls': len(fn['calls']),
+                        })
+                        break
+            else:
+                changed_fns.append({
+                    'name': fn['name'], 'file': fp,
+                    'line': fn['line_start'], 'subsystem': fn['subsystem'],
+                    'complexity': fn.get('complexity', 0),
+                    'callers': len(fn['callers']), 'calls': len(fn['calls']),
+                })
+
+        # Compute blast radius via BFS through callers
+        all_affected = set()
+        for cf in changed_fns:
+            fn = self._find_fn(cf['name'])
+            if fn:
+                visited = set()
+                queue = [fn[0]]
+                while queue:
+                    k = queue.pop(0)
+                    if k in visited:
+                        continue
+                    visited.add(k)
+                    f = self.functions.get(k)
+                    if f:
+                        for caller in f.get('callers', []):
+                            queue.append(caller)
+                all_affected |= visited
+
+        subs_affected = set()
+        for k in all_affected:
+            f = self.functions.get(k)
+            if f:
+                subs_affected.add(f['subsystem'])
+
+        n = len(all_affected)
+        risk = 'LOW' if n < 10 else 'MEDIUM' if n < 50 else 'HIGH' if n < 100 else 'CRITICAL'
+
+        return {
+            'base': base, 'head': head,
+            'files_changed': len(changed_files),
+            'file_details': [{'file': f, 'status': s}
+                             for f, s in list(changed_files.items())[:30]],
+            'functions_changed': len(changed_fns),
+            'function_details': changed_fns[:50],
+            'blast_radius': n,
+            'subsystems_affected': sorted(subs_affected),
+            'risk': risk,
+        }
+
+    # ── Tier 3: PR auto-review context ───────────────────────────────
+
+    def query_pr_review(self, base_branch='main'):
+        """Auto-generate PR review: changes, blast radius, new edges, risk."""
+        try:
+            r = subprocess.run(
+                ['git', '-C', self.root, 'rev-parse', '--abbrev-ref', 'HEAD'],
+                capture_output=True, text=True, timeout=5)
+            current_branch = r.stdout.strip()
+        except Exception:
+            return {'error': 'Not a git repository'}
+
+        try:
+            r = subprocess.run(
+                ['git', '-C', self.root, 'log', f'{base_branch}..HEAD', '--oneline'],
+                capture_output=True, text=True, timeout=5)
+            commits = [l.strip() for l in r.stdout.strip().split('\n') if l.strip()]
+        except Exception:
+            commits = []
+
+        diff = self.query_diff(base_branch, 'HEAD')
+        if 'error' in diff:
+            return diff
+
+        # Detect new cross-subsystem edges
+        new_edges = set()
+        for cf in diff.get('function_details', []):
+            fn = self._find_fn(cf['name'])
+            if fn:
+                key, finfo = fn
+                for callee in finfo.get('calls', []):
+                    if callee in self.functions:
+                        dst_sub = self.functions[callee]['subsystem']
+                        if dst_sub != finfo['subsystem']:
+                            new_edges.add(f"{finfo['subsystem']} -> {dst_sub}")
+
+        # Complexity of changed code
+        total_complexity = sum(
+            cf.get('complexity', 0) for cf in diff.get('function_details', []))
+
+        # Build summary
+        nf = diff.get('functions_changed', 0)
+        nfiles = diff.get('files_changed', 0)
+        blast = diff.get('blast_radius', 0)
+        lines = [
+            f"**{nfiles} files changed**, **{nf} functions modified**",
+            f"**Blast radius**: {blast} functions potentially affected",
+            f"**Risk**: {diff.get('risk', '?')}",
+        ]
+        if diff.get('subsystems_affected'):
+            lines.append(f"**Subsystems touched**: {', '.join(diff['subsystems_affected'])}")
+        if new_edges:
+            lines.append(f"**New cross-subsystem edges**: {', '.join(sorted(new_edges))}")
+        lines.append(f"**Complexity in changed code**: {total_complexity}")
+        if commits:
+            lines.append(f"**Commits**: {len(commits)}")
+
+        return {
+            'branch': current_branch,
+            'base': base_branch,
+            'commits': len(commits),
+            'commit_list': commits[:20],
+            'summary': '\n'.join(lines),
+            **diff,
+        }
+
+    # ── Tier 3: Runtime correlation (OpenTelemetry) ──────────────────
+
+    def query_runtime(self, trace_file=None, trace_dir=None):
+        """Correlate OpenTelemetry/Jaeger traces with static call graph."""
+        traces = []
+        if trace_file and os.path.isfile(trace_file):
+            traces = [trace_file]
+        elif trace_dir and os.path.isdir(trace_dir):
+            for f in sorted(os.listdir(trace_dir)):
+                if f.endswith('.json') or f.endswith('.otlp'):
+                    traces.append(os.path.join(trace_dir, f))
+        else:
+            for d in ['traces', '.traces', 'otel', '.otel', 'telemetry', 'spans']:
+                td = os.path.join(self.root, d)
+                if os.path.isdir(td):
+                    for f in sorted(os.listdir(td)):
+                        if f.endswith('.json'):
+                            traces.append(os.path.join(td, f))
+
+        if not traces:
+            return {
+                'status': 'no_traces',
+                'hint': 'Export OpenTelemetry traces as JSON to a traces/ directory in your project root. '
+                        'Supported formats: OTLP JSON ({resourceSpans: [...]}), Jaeger JSON ({data: [{spans: [...]}]}). '
+                        'Or pass trace_file/trace_dir parameter.',
+                'setup_example': {
+                    'otel_collector': 'exporters: { file: { path: traces/spans.json } }',
+                    'jaeger': 'curl http://jaeger:16686/api/traces?service=myapp > traces/spans.json',
+                },
+            }
+
+        span_counts = {}
+        for tf in traces[:20]:
+            try:
+                with open(tf, 'r') as f:
+                    data = json.load(f)
+                spans = []
+                for rs in data.get('resourceSpans', data.get('resource_spans', [])):
+                    for ss in rs.get('scopeSpans', rs.get('scope_spans', [])):
+                        spans.extend(ss.get('spans', []))
+                if 'data' in data:
+                    for trace in data['data']:
+                        spans.extend(trace.get('spans', []))
+
+                for span in spans:
+                    name = span.get('name', span.get('operationName', ''))
+                    duration = 0
+                    if 'endTimeUnixNano' in span and 'startTimeUnixNano' in span:
+                        duration = (int(span['endTimeUnixNano']) - int(span['startTimeUnixNano'])) / 1e6
+                    elif 'duration' in span:
+                        duration = span['duration'] / 1000.0
+                    if name not in span_counts:
+                        span_counts[name] = {'count': 0, 'total_ms': 0, 'max_ms': 0}
+                    span_counts[name]['count'] += 1
+                    span_counts[name]['total_ms'] += duration
+                    span_counts[name]['max_ms'] = max(span_counts[name]['max_ms'], duration)
+            except Exception:
+                continue
+
+        fn_names = {fn['name'] for fn in self.functions.values()}
+        hot_paths = []
+        matched = set()
+
+        for span_name, stats in sorted(span_counts.items(), key=lambda x: -x[1]['count']):
+            base_name = span_name.split('.')[-1].split('::')[-1].split('/')[-1]
+            if base_name in fn_names:
+                matched.add(base_name)
+                fn = self._find_fn(base_name)
+                hot_paths.append({
+                    'span': span_name, 'function': base_name,
+                    'file': fn[1]['file'] if fn else '?',
+                    'subsystem': fn[1]['subsystem'] if fn else '?',
+                    'invocations': stats['count'],
+                    'total_ms': round(stats['total_ms'], 1),
+                    'avg_ms': round(stats['total_ms'] / max(stats['count'], 1), 2),
+                    'max_ms': round(stats['max_ms'], 1),
+                })
+
+        cold_functions = []
+        for fn_key, fn in self.functions.items():
+            if fn['name'] not in matched and fn['callers']:
+                cold_functions.append({
+                    'name': fn['name'], 'file': fn['file'],
+                    'callers': len(fn['callers']),
+                })
+        cold_functions.sort(key=lambda x: x['callers'], reverse=True)
+
+        return {
+            'trace_files': len(traces),
+            'total_spans': sum(s['count'] for s in span_counts.values()),
+            'unique_operations': len(span_counts),
+            'matched_to_functions': len(hot_paths),
+            'hot_paths': hot_paths[:30],
+            'potentially_cold': cold_functions[:20],
+        }
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MCP Tool definitions
@@ -987,6 +1771,98 @@ TOOLS = [
         'description': 'Architecture: subsystems, cross-subsystem dependencies, language mix.',
         'inputSchema': {'type': 'object', 'properties': {}, 'required': []},
     },
+    # ── Tier 1 ────────────────────────────────────────────────────────
+    {
+        'name': 'ezgraph_impact',
+        'description': 'Blast radius: if you change this function, what breaks? Affected callers, subsystems, risk level.',
+        'inputSchema': {'type': 'object', 'properties': {
+            'name': {'type': 'string', 'description': 'Function to analyze'},
+            'depth': {'type': 'integer', 'description': 'Max caller depth (default 5)'},
+        }, 'required': ['name']},
+    },
+    {
+        'name': 'ezgraph_diagram',
+        'description': 'Auto-generate Mermaid or D2 architecture diagrams. Target: "architecture", subsystem name, or function name.',
+        'inputSchema': {'type': 'object', 'properties': {
+            'target': {'type': 'string', 'description': '"architecture", a subsystem name, or a function name (default: architecture)'},
+            'format': {'type': 'string', 'description': '"mermaid" (default) or "d2"', 'enum': ['mermaid', 'd2']},
+        }, 'required': []},
+    },
+    {
+        'name': 'ezgraph_deadcode',
+        'description': 'Find dead code: functions with zero callers, grouped by subsystem, with LOC waste estimate.',
+        'inputSchema': {'type': 'object', 'properties': {}, 'required': []},
+    },
+    {
+        'name': 'ezgraph_clones',
+        'description': 'Detect near-duplicate functions using token similarity. Finds copy-paste code.',
+        'inputSchema': {'type': 'object', 'properties': {
+            'threshold': {'type': 'number', 'description': 'Similarity threshold 0.0-1.0 (default 0.7)'},
+        }, 'required': []},
+    },
+    # ── Tier 2 ────────────────────────────────────────────────────────
+    {
+        'name': 'ezgraph_complexity',
+        'description': 'Cyclomatic + cognitive complexity analysis. Per-function detail or top-N ranking.',
+        'inputSchema': {'type': 'object', 'properties': {
+            'name': {'type': 'string', 'description': 'Function name (omit for top-N ranking)'},
+            'n': {'type': 'integer', 'description': 'Number of results for ranking (default 20)'},
+        }, 'required': []},
+    },
+    {
+        'name': 'ezgraph_complexity_velocity',
+        'description': 'Track complexity changes over recent git history. Shows which commits touched complex code.',
+        'inputSchema': {'type': 'object', 'properties': {
+            'n_commits': {'type': 'integer', 'description': 'Number of commits to analyze (default 10)'},
+        }, 'required': []},
+    },
+    {
+        'name': 'ezgraph_semantic',
+        'description': 'Semantic search: find functions by meaning, not just name. "handle authentication" finds verify_token, check_session, etc.',
+        'inputSchema': {'type': 'object', 'properties': {
+            'query': {'type': 'string', 'description': 'Natural language query'},
+            'n': {'type': 'integer', 'description': 'Number of results (default 20)'},
+        }, 'required': ['query']},
+    },
+    {
+        'name': 'ezgraph_federation',
+        'description': 'Multi-repo federated search: query across multiple codebases at once.',
+        'inputSchema': {'type': 'object', 'properties': {
+            'query': {'type': 'string', 'description': 'Search query'},
+            'repos': {'type': 'array', 'items': {'type': 'string'}, 'description': 'Additional repo paths to include'},
+        }, 'required': ['query']},
+    },
+    # ── Tier 3 ────────────────────────────────────────────────────────
+    {
+        'name': 'ezgraph_ask',
+        'description': 'Ask a natural language question about the codebase. Auto-routes to the right analysis tool.',
+        'inputSchema': {'type': 'object', 'properties': {
+            'question': {'type': 'string', 'description': 'Question in plain English'},
+        }, 'required': ['question']},
+    },
+    {
+        'name': 'ezgraph_diff',
+        'description': 'Git-aware graph diff: changed functions, blast radius, risk level between any two refs.',
+        'inputSchema': {'type': 'object', 'properties': {
+            'base': {'type': 'string', 'description': 'Base git ref (default HEAD~1)'},
+            'head': {'type': 'string', 'description': 'Head git ref (default HEAD)'},
+        }, 'required': []},
+    },
+    {
+        'name': 'ezgraph_pr_review',
+        'description': 'Auto-generate PR review context: changes, blast radius, new cross-subsystem edges, complexity delta, risk.',
+        'inputSchema': {'type': 'object', 'properties': {
+            'base_branch': {'type': 'string', 'description': 'Base branch to compare against (default "main")'},
+        }, 'required': []},
+    },
+    {
+        'name': 'ezgraph_runtime',
+        'description': 'Correlate OpenTelemetry/Jaeger traces with static call graph. Find hot production paths and cold code.',
+        'inputSchema': {'type': 'object', 'properties': {
+            'trace_file': {'type': 'string', 'description': 'Path to trace JSON file'},
+            'trace_dir': {'type': 'string', 'description': 'Directory containing trace JSON files'},
+        }, 'required': []},
+    },
 ]
 
 
@@ -1018,6 +1894,21 @@ def handle_tool_call(graph: EZgraph, watcher: GraphWatcher,
         'ezgraph_trace': lambda: graph.query_trace(args.get('name', ''), args.get('depth', 5)),
         'ezgraph_hotspots': lambda: graph.query_hotspots(args.get('n', 20)),
         'ezgraph_architecture': lambda: graph.query_architecture(),
+        # Tier 1
+        'ezgraph_impact': lambda: graph.query_impact(args.get('name', ''), args.get('depth', 5)),
+        'ezgraph_diagram': lambda: graph.query_diagram(args.get('target', 'architecture'), args.get('format', 'mermaid')),
+        'ezgraph_deadcode': lambda: graph.query_deadcode(),
+        'ezgraph_clones': lambda: graph.query_clones(args.get('threshold', 0.7)),
+        # Tier 2
+        'ezgraph_complexity': lambda: graph.query_complexity(args.get('name'), args.get('n', 20)),
+        'ezgraph_complexity_velocity': lambda: graph.query_complexity_velocity(args.get('n_commits', 10)),
+        'ezgraph_semantic': lambda: graph.query_semantic(args.get('query', ''), args.get('n', 20)),
+        'ezgraph_federation': lambda: graph.query_federation(args.get('repos', []), args.get('query', '')),
+        # Tier 3
+        'ezgraph_ask': lambda: graph.query_ask(args.get('question', '')),
+        'ezgraph_diff': lambda: graph.query_diff(args.get('base', 'HEAD~1'), args.get('head', 'HEAD')),
+        'ezgraph_pr_review': lambda: graph.query_pr_review(args.get('base_branch', 'main')),
+        'ezgraph_runtime': lambda: graph.query_runtime(args.get('trace_file'), args.get('trace_dir')),
     }
 
     handler = dispatch.get(tool_name)
@@ -1055,7 +1946,7 @@ def run_mcp_server(graph: EZgraph, watcher: GraphWatcher):
                 'result': {
                     'protocolVersion': '2024-11-05',
                     'capabilities': {'tools': {}},
-                    'serverInfo': {'name': 'ezgraph', 'version': '0.1.0'},
+                    'serverInfo': {'name': 'ezgraph', 'version': '0.2.0'},
                 },
             })
         elif method == 'notifications/initialized':

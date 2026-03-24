@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ezgraph"
-version = "0.1.0"
+version = "0.2.0"
 description = "Instant codebase knowledge graph MCP server — drop into any project, auto-indexes everything."
 readme = "README.md"
 license = "MIT"
