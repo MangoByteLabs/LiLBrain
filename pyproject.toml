@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ezgraph"
+version = "0.1.0"
+description = "Instant codebase knowledge graph MCP server — drop into any project, auto-indexes everything."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{name = "MangoByteLabs"}]
+keywords = ["mcp", "knowledge-graph", "codebase", "code-analysis", "claude", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Code Generators",
+]
+
+[project.urls]
+Homepage = "https://github.com/MangoByteLabs/EZgraph"
+Repository = "https://github.com/MangoByteLabs/EZgraph"
+Issues = "https://github.com/MangoByteLabs/EZgraph/issues"
+
+[project.scripts]
+ezgraph = "ezgraph.server:main"
+
+[tool.setuptools.packages.find]
+include = ["ezgraph*"]
