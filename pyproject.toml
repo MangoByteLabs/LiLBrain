@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ezgraph"
+name = "lilbrain"
 version = "0.2.0"
 description = "Instant codebase knowledge graph MCP server — drop into any project, auto-indexes everything."
 readme = "README.md"
@@ -24,12 +24,12 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/MangoByteLabs/EZgraph"
-Repository = "https://github.com/MangoByteLabs/EZgraph"
-Issues = "https://github.com/MangoByteLabs/EZgraph/issues"
+Homepage = "https://github.com/MangoByteLabs/LiLBrain"
+Repository = "https://github.com/MangoByteLabs/LiLBrain"
+Issues = "https://github.com/MangoByteLabs/LiLBrain/issues"
 
 [project.scripts]
-ezgraph = "ezgraph.server:main"
+lilbrain = "lilbrain.server:main"
 
 [tool.setuptools.packages.find]
-include = ["ezgraph*"]
+include = ["lilbrain*"]

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-EZgraph — Instant codebase knowledge graph MCP server.
+LiLBrain — Instant codebase knowledge graph MCP server.
 
 Drop into any project. Auto-detects languages. Indexes everything.
 One server, any codebase, 20 tools.
 
 Usage:
-    ezgraph                          # index current directory
-    ezgraph /path/to/project         # index specific project
-    ezgraph --port 8080              # HTTP mode (coming soon)
+    lilbrain                          # index current directory
+    lilbrain /path/to/project         # index specific project
+    lilbrain --port 8080              # HTTP mode (coming soon)
 
 Supported languages:
     Python, Rust, Go, TypeScript, JavaScript, Java, C, C++, C#,
@@ -289,10 +289,10 @@ class GraphWatcher:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# EZgraph — the unified knowledge graph
+# LiLBrain — the unified knowledge graph
 # ─────────────────────────────────────────────────────────────────────────────
 
-class EZgraph:
+class LiLBrain:
     """Universal codebase knowledge graph. Any language, any project."""
 
     def __init__(self, root_dir: str):
@@ -1314,7 +1314,7 @@ class EZgraph:
                 all_files += len(self.files)
             else:
                 try:
-                    g = EZgraph(repo_path)
+                    g = LiLBrain(repo_path)
                     g.build()
                     r = g.query_search(search_query)
                     if r.get('total_matches', 0) > 0:
@@ -1342,7 +1342,7 @@ class EZgraph:
                 overviews[name] = self.query_overview()
             else:
                 try:
-                    g = EZgraph(repo_path)
+                    g = LiLBrain(repo_path)
                     g.build()
                     overviews[name] = g.query_overview()
                 except Exception as e:
@@ -1689,40 +1689,40 @@ class EZgraph:
 
 TOOLS = [
     {
-        'name': 'ezgraph_overview',
+        'name': 'lilbrain_overview',
         'description': 'Project overview: files, functions, classes, languages, subsystems, pipelines. Start here.',
         'inputSchema': {'type': 'object', 'properties': {}, 'required': []},
     },
     {
-        'name': 'ezgraph_function',
+        'name': 'lilbrain_function',
         'description': 'Look up any function by name. Returns signature, location, callers, callees, language.',
         'inputSchema': {'type': 'object', 'properties': {
             'name': {'type': 'string', 'description': 'Function name (exact or partial)'},
         }, 'required': ['name']},
     },
     {
-        'name': 'ezgraph_callers',
+        'name': 'lilbrain_callers',
         'description': 'Call graph for a function: who calls it and what it calls.',
         'inputSchema': {'type': 'object', 'properties': {
             'name': {'type': 'string', 'description': 'Function name'},
         }, 'required': ['name']},
     },
     {
-        'name': 'ezgraph_search',
+        'name': 'lilbrain_search',
         'description': 'Search everything: functions, classes, sections, constants.',
         'inputSchema': {'type': 'object', 'properties': {
             'query': {'type': 'string', 'description': 'Search query'},
         }, 'required': ['query']},
     },
     {
-        'name': 'ezgraph_file',
+        'name': 'lilbrain_file',
         'description': 'Get info about a file: functions, classes, sections, language.',
         'inputSchema': {'type': 'object', 'properties': {
             'path': {'type': 'string', 'description': 'File path (relative or partial)'},
         }, 'required': ['path']},
     },
     {
-        'name': 'ezgraph_read',
+        'name': 'lilbrain_read',
         'description': 'Read source code of a function (by name) or file region (by path + line range).',
         'inputSchema': {'type': 'object', 'properties': {
             'name': {'type': 'string', 'description': 'Function name or file path'},
@@ -1731,28 +1731,28 @@ TOOLS = [
         }, 'required': ['name']},
     },
     {
-        'name': 'ezgraph_subsystem',
+        'name': 'lilbrain_subsystem',
         'description': 'Deep dive into a subsystem: files, top functions, languages.',
         'inputSchema': {'type': 'object', 'properties': {
             'name': {'type': 'string', 'description': 'Subsystem name'},
         }, 'required': ['name']},
     },
     {
-        'name': 'ezgraph_pipeline',
+        'name': 'lilbrain_pipeline',
         'description': 'Trace a named pipeline or pattern (parse, validate, handle, compile, etc.).',
         'inputSchema': {'type': 'object', 'properties': {
             'name': {'type': 'string', 'description': 'Pipeline name'},
         }, 'required': ['name']},
     },
     {
-        'name': 'ezgraph_dataflow',
+        'name': 'lilbrain_dataflow',
         'description': 'Data flow: upstream callers and downstream callees for a function.',
         'inputSchema': {'type': 'object', 'properties': {
             'name': {'type': 'string', 'description': 'Function name'},
         }, 'required': ['name']},
     },
     {
-        'name': 'ezgraph_trace',
+        'name': 'lilbrain_trace',
         'description': 'Depth-limited call chain trace from a function.',
         'inputSchema': {'type': 'object', 'properties': {
             'name': {'type': 'string', 'description': 'Starting function'},
@@ -1760,20 +1760,20 @@ TOOLS = [
         }, 'required': ['name']},
     },
     {
-        'name': 'ezgraph_hotspots',
+        'name': 'lilbrain_hotspots',
         'description': 'Most connected functions (highest fan-in + fan-out).',
         'inputSchema': {'type': 'object', 'properties': {
             'n': {'type': 'integer', 'description': 'Number of hotspots (default 20)'},
         }, 'required': []},
     },
     {
-        'name': 'ezgraph_architecture',
+        'name': 'lilbrain_architecture',
         'description': 'Architecture: subsystems, cross-subsystem dependencies, language mix.',
         'inputSchema': {'type': 'object', 'properties': {}, 'required': []},
     },
     # ── Tier 1 ────────────────────────────────────────────────────────
     {
-        'name': 'ezgraph_impact',
+        'name': 'lilbrain_impact',
         'description': 'Blast radius: if you change this function, what breaks? Affected callers, subsystems, risk level.',
         'inputSchema': {'type': 'object', 'properties': {
             'name': {'type': 'string', 'description': 'Function to analyze'},
@@ -1781,7 +1781,7 @@ TOOLS = [
         }, 'required': ['name']},
     },
     {
-        'name': 'ezgraph_diagram',
+        'name': 'lilbrain_diagram',
         'description': 'Auto-generate Mermaid or D2 architecture diagrams. Target: "architecture", subsystem name, or function name.',
         'inputSchema': {'type': 'object', 'properties': {
             'target': {'type': 'string', 'description': '"architecture", a subsystem name, or a function name (default: architecture)'},
@@ -1789,12 +1789,12 @@ TOOLS = [
         }, 'required': []},
     },
     {
-        'name': 'ezgraph_deadcode',
+        'name': 'lilbrain_deadcode',
         'description': 'Find dead code: functions with zero callers, grouped by subsystem, with LOC waste estimate.',
         'inputSchema': {'type': 'object', 'properties': {}, 'required': []},
     },
     {
-        'name': 'ezgraph_clones',
+        'name': 'lilbrain_clones',
         'description': 'Detect near-duplicate functions using token similarity. Finds copy-paste code.',
         'inputSchema': {'type': 'object', 'properties': {
             'threshold': {'type': 'number', 'description': 'Similarity threshold 0.0-1.0 (default 0.7)'},
@@ -1802,7 +1802,7 @@ TOOLS = [
     },
     # ── Tier 2 ────────────────────────────────────────────────────────
     {
-        'name': 'ezgraph_complexity',
+        'name': 'lilbrain_complexity',
         'description': 'Cyclomatic + cognitive complexity analysis. Per-function detail or top-N ranking.',
         'inputSchema': {'type': 'object', 'properties': {
             'name': {'type': 'string', 'description': 'Function name (omit for top-N ranking)'},
@@ -1810,14 +1810,14 @@ TOOLS = [
         }, 'required': []},
     },
     {
-        'name': 'ezgraph_complexity_velocity',
+        'name': 'lilbrain_complexity_velocity',
         'description': 'Track complexity changes over recent git history. Shows which commits touched complex code.',
         'inputSchema': {'type': 'object', 'properties': {
             'n_commits': {'type': 'integer', 'description': 'Number of commits to analyze (default 10)'},
         }, 'required': []},
     },
     {
-        'name': 'ezgraph_semantic',
+        'name': 'lilbrain_semantic',
         'description': 'Semantic search: find functions by meaning, not just name. "handle authentication" finds verify_token, check_session, etc.',
         'inputSchema': {'type': 'object', 'properties': {
             'query': {'type': 'string', 'description': 'Natural language query'},
@@ -1825,7 +1825,7 @@ TOOLS = [
         }, 'required': ['query']},
     },
     {
-        'name': 'ezgraph_federation',
+        'name': 'lilbrain_federation',
         'description': 'Multi-repo federated search: query across multiple codebases at once.',
         'inputSchema': {'type': 'object', 'properties': {
             'query': {'type': 'string', 'description': 'Search query'},
@@ -1834,14 +1834,14 @@ TOOLS = [
     },
     # ── Tier 3 ────────────────────────────────────────────────────────
     {
-        'name': 'ezgraph_ask',
+        'name': 'lilbrain_ask',
         'description': 'Ask a natural language question about the codebase. Auto-routes to the right analysis tool.',
         'inputSchema': {'type': 'object', 'properties': {
             'question': {'type': 'string', 'description': 'Question in plain English'},
         }, 'required': ['question']},
     },
     {
-        'name': 'ezgraph_diff',
+        'name': 'lilbrain_diff',
         'description': 'Git-aware graph diff: changed functions, blast radius, risk level between any two refs.',
         'inputSchema': {'type': 'object', 'properties': {
             'base': {'type': 'string', 'description': 'Base git ref (default HEAD~1)'},
@@ -1849,14 +1849,14 @@ TOOLS = [
         }, 'required': []},
     },
     {
-        'name': 'ezgraph_pr_review',
+        'name': 'lilbrain_pr_review',
         'description': 'Auto-generate PR review context: changes, blast radius, new cross-subsystem edges, complexity delta, risk.',
         'inputSchema': {'type': 'object', 'properties': {
             'base_branch': {'type': 'string', 'description': 'Base branch to compare against (default "main")'},
         }, 'required': []},
     },
     {
-        'name': 'ezgraph_runtime',
+        'name': 'lilbrain_runtime',
         'description': 'Correlate OpenTelemetry/Jaeger traces with static call graph. Find hot production paths and cold code.',
         'inputSchema': {'type': 'object', 'properties': {
             'trace_file': {'type': 'string', 'description': 'Path to trace JSON file'},
@@ -1870,45 +1870,45 @@ TOOLS = [
 # Tool dispatch
 # ─────────────────────────────────────────────────────────────────────────────
 
-def handle_tool_call(graph: EZgraph, watcher: GraphWatcher,
+def handle_tool_call(graph: LiLBrain, watcher: GraphWatcher,
                      tool_name: str, args: dict) -> Any:
     if watcher.is_stale():
-        sys.stderr.write('[ezgraph] Sources changed, reindexing...\n')
+        sys.stderr.write('[lilbrain] Sources changed, reindexing...\n')
         sys.stderr.flush()
         graph.__init__(graph.root)
         graph.build()
         watcher.snapshot()
-        sys.stderr.write('[ezgraph] Reindex complete.\n')
+        sys.stderr.write('[lilbrain] Reindex complete.\n')
         sys.stderr.flush()
 
     dispatch = {
-        'ezgraph_overview': lambda: graph.query_overview(),
-        'ezgraph_function': lambda: graph.query_function(args.get('name', '')),
-        'ezgraph_callers': lambda: graph.query_callers(args.get('name', '')),
-        'ezgraph_search': lambda: graph.query_search(args.get('query', '')),
-        'ezgraph_file': lambda: graph.query_file(args.get('path', '')),
-        'ezgraph_read': lambda: graph.query_read(args.get('name', ''), args.get('start', 0), args.get('end', 0)),
-        'ezgraph_subsystem': lambda: graph.query_subsystem(args.get('name', '')),
-        'ezgraph_pipeline': lambda: graph.query_pipeline(args.get('name', '')),
-        'ezgraph_dataflow': lambda: graph.query_dataflow(args.get('name', '')),
-        'ezgraph_trace': lambda: graph.query_trace(args.get('name', ''), args.get('depth', 5)),
-        'ezgraph_hotspots': lambda: graph.query_hotspots(args.get('n', 20)),
-        'ezgraph_architecture': lambda: graph.query_architecture(),
+        'lilbrain_overview': lambda: graph.query_overview(),
+        'lilbrain_function': lambda: graph.query_function(args.get('name', '')),
+        'lilbrain_callers': lambda: graph.query_callers(args.get('name', '')),
+        'lilbrain_search': lambda: graph.query_search(args.get('query', '')),
+        'lilbrain_file': lambda: graph.query_file(args.get('path', '')),
+        'lilbrain_read': lambda: graph.query_read(args.get('name', ''), args.get('start', 0), args.get('end', 0)),
+        'lilbrain_subsystem': lambda: graph.query_subsystem(args.get('name', '')),
+        'lilbrain_pipeline': lambda: graph.query_pipeline(args.get('name', '')),
+        'lilbrain_dataflow': lambda: graph.query_dataflow(args.get('name', '')),
+        'lilbrain_trace': lambda: graph.query_trace(args.get('name', ''), args.get('depth', 5)),
+        'lilbrain_hotspots': lambda: graph.query_hotspots(args.get('n', 20)),
+        'lilbrain_architecture': lambda: graph.query_architecture(),
         # Tier 1
-        'ezgraph_impact': lambda: graph.query_impact(args.get('name', ''), args.get('depth', 5)),
-        'ezgraph_diagram': lambda: graph.query_diagram(args.get('target', 'architecture'), args.get('format', 'mermaid')),
-        'ezgraph_deadcode': lambda: graph.query_deadcode(),
-        'ezgraph_clones': lambda: graph.query_clones(args.get('threshold', 0.7)),
+        'lilbrain_impact': lambda: graph.query_impact(args.get('name', ''), args.get('depth', 5)),
+        'lilbrain_diagram': lambda: graph.query_diagram(args.get('target', 'architecture'), args.get('format', 'mermaid')),
+        'lilbrain_deadcode': lambda: graph.query_deadcode(),
+        'lilbrain_clones': lambda: graph.query_clones(args.get('threshold', 0.7)),
         # Tier 2
-        'ezgraph_complexity': lambda: graph.query_complexity(args.get('name'), args.get('n', 20)),
-        'ezgraph_complexity_velocity': lambda: graph.query_complexity_velocity(args.get('n_commits', 10)),
-        'ezgraph_semantic': lambda: graph.query_semantic(args.get('query', ''), args.get('n', 20)),
-        'ezgraph_federation': lambda: graph.query_federation(args.get('repos', []), args.get('query', '')),
+        'lilbrain_complexity': lambda: graph.query_complexity(args.get('name'), args.get('n', 20)),
+        'lilbrain_complexity_velocity': lambda: graph.query_complexity_velocity(args.get('n_commits', 10)),
+        'lilbrain_semantic': lambda: graph.query_semantic(args.get('query', ''), args.get('n', 20)),
+        'lilbrain_federation': lambda: graph.query_federation(args.get('repos', []), args.get('query', '')),
         # Tier 3
-        'ezgraph_ask': lambda: graph.query_ask(args.get('question', '')),
-        'ezgraph_diff': lambda: graph.query_diff(args.get('base', 'HEAD~1'), args.get('head', 'HEAD')),
-        'ezgraph_pr_review': lambda: graph.query_pr_review(args.get('base_branch', 'main')),
-        'ezgraph_runtime': lambda: graph.query_runtime(args.get('trace_file'), args.get('trace_dir')),
+        'lilbrain_ask': lambda: graph.query_ask(args.get('question', '')),
+        'lilbrain_diff': lambda: graph.query_diff(args.get('base', 'HEAD~1'), args.get('head', 'HEAD')),
+        'lilbrain_pr_review': lambda: graph.query_pr_review(args.get('base_branch', 'main')),
+        'lilbrain_runtime': lambda: graph.query_runtime(args.get('trace_file'), args.get('trace_dir')),
     }
 
     handler = dispatch.get(tool_name)
@@ -1926,7 +1926,7 @@ def send(msg):
     sys.stdout.flush()
 
 
-def run_mcp_server(graph: EZgraph, watcher: GraphWatcher):
+def run_mcp_server(graph: LiLBrain, watcher: GraphWatcher):
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -1946,7 +1946,7 @@ def run_mcp_server(graph: EZgraph, watcher: GraphWatcher):
                 'result': {
                     'protocolVersion': '2024-11-05',
                     'capabilities': {'tools': {}},
-                    'serverInfo': {'name': 'ezgraph', 'version': '0.2.0'},
+                    'serverInfo': {'name': 'lilbrain', 'version': '0.2.0'},
                 },
             })
         elif method == 'notifications/initialized':
@@ -1981,14 +1981,14 @@ def run_mcp_server(graph: EZgraph, watcher: GraphWatcher):
 def main():
     import argparse
     parser = argparse.ArgumentParser(
-        description='EZgraph — instant codebase knowledge graph MCP server',
+        description='LiLBrain — instant codebase knowledge graph MCP server',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-  ezgraph                     # Index current directory, run MCP server
-  ezgraph /path/to/project    # Index specific project
-  ezgraph --dump              # Print graph JSON and exit
-  ezgraph --query main        # Quick function lookup and exit
+  lilbrain                     # Index current directory, run MCP server
+  lilbrain /path/to/project    # Index specific project
+  lilbrain --dump              # Print graph JSON and exit
+  lilbrain --query main        # Quick function lookup and exit
 
 Supported: Python, Rust, Go, TypeScript, JavaScript, Java, C/C++, C#,
            Ruby, PHP, Swift, Kotlin, Scala, Zig, Lua, Elixir, Dart, Vortex
@@ -2005,10 +2005,10 @@ Supported: Python, Rust, Go, TypeScript, JavaScript, Java, C/C++, C#,
         print(f'Error: {root} is not a directory', file=sys.stderr)
         sys.exit(1)
 
-    sys.stderr.write(f'[ezgraph] Indexing {root} ...\n')
+    sys.stderr.write(f'[lilbrain] Indexing {root} ...\n')
     sys.stderr.flush()
 
-    graph = EZgraph(root)
+    graph = LiLBrain(root)
     graph.build()
 
     # Set up watcher
@@ -2018,14 +2018,14 @@ Supported: Python, Rust, Go, TypeScript, JavaScript, Java, C/C++, C#,
     watcher.snapshot()
 
     sys.stderr.write(
-        f'[ezgraph] {len(graph.functions)} functions, '
+        f'[lilbrain] {len(graph.functions)} functions, '
         f'{len(graph.files)} files, '
         f'{len(graph.classes)} classes, '
         f'{len(graph.subsystems)} subsystems '
         f'in {graph.build_time:.1f}s\n'
     )
     langs = ', '.join(f'{k}({v})' for k, v in sorted(graph.languages_found.items(), key=lambda x: -x[1]))
-    sys.stderr.write(f'[ezgraph] Languages: {langs}\n')
+    sys.stderr.write(f'[lilbrain] Languages: {langs}\n')
     sys.stderr.flush()
 
     if args.stats:

@@ -1,4 +1,4 @@
-# EZgraph
+# LiLBrain
 
 **Instant codebase knowledge graph MCP server.**
 
@@ -8,7 +8,7 @@ Drop it into any project. It auto-detects languages, indexes every function, cla
 
 Reading 5,000 lines to understand a call chain costs ~50K tokens. One graph query costs ~200 tokens. **That's a 250x cost reduction.**
 
-EZgraph turns any codebase into a queryable knowledge graph with zero configuration.
+LiLBrain turns any codebase into a queryable knowledge graph with zero configuration.
 
 ## Supported Languages (20+)
 
@@ -17,14 +17,14 @@ Python, Rust, Go, TypeScript, JavaScript, Java, C, C++, C#, Ruby, PHP, Swift, Ko
 ## Install
 
 ```bash
-pip install ezgraph
+pip install lilbrain
 ```
 
 Or clone:
 
 ```bash
-git clone https://github.com/MangoByteLabs/EZgraph.git
-cd EZgraph
+git clone https://github.com/MangoByteLabs/LiLBrain.git
+cd LiLBrain
 pip install -e .
 ```
 
@@ -37,8 +37,8 @@ Add to your `.mcp.json`:
 ```json
 {
   "mcpServers": {
-    "ezgraph": {
-      "command": "ezgraph",
+    "lilbrain": {
+      "command": "lilbrain",
       "args": ["/path/to/your/project"]
     }
   }
@@ -50,9 +50,9 @@ Or with Python directly:
 ```json
 {
   "mcpServers": {
-    "ezgraph": {
+    "lilbrain": {
       "command": "python3",
-      "args": ["-m", "ezgraph", "/path/to/your/project"]
+      "args": ["-m", "lilbrain", "/path/to/your/project"]
     }
   }
 }
@@ -62,13 +62,13 @@ Or with Python directly:
 
 ```bash
 # Stats overview
-ezgraph /path/to/project --stats
+lilbrain /path/to/project --stats
 
 # Quick function lookup
-ezgraph /path/to/project --query main
+lilbrain /path/to/project --query main
 
 # Dump full graph JSON
-ezgraph /path/to/project --dump
+lilbrain /path/to/project --dump
 ```
 
 ## What It Indexes
@@ -92,54 +92,54 @@ ezgraph /path/to/project --dump
 
 | Tool | Description |
 |------|-------------|
-| `ezgraph_overview` | Project summary: files, functions, languages, subsystems |
-| `ezgraph_function` | Look up any function — signature, location, callers, callees |
-| `ezgraph_callers` | Full call graph for a function |
-| `ezgraph_search` | Search everything: functions, classes, sections, constants |
-| `ezgraph_file` | File info: functions, classes, sections, language |
-| `ezgraph_read` | Read source code of a function or file region |
-| `ezgraph_subsystem` | Deep dive into a subsystem |
-| `ezgraph_pipeline` | Trace a pipeline (parse, validate, compile, etc.) |
-| `ezgraph_dataflow` | Upstream callers and downstream callees |
-| `ezgraph_trace` | Depth-limited call chain trace |
-| `ezgraph_hotspots` | Most connected functions (highest fan-in + fan-out) |
-| `ezgraph_architecture` | Architecture map: subsystems and cross-dependencies |
+| `lilbrain_overview` | Project summary: files, functions, languages, subsystems |
+| `lilbrain_function` | Look up any function — signature, location, callers, callees |
+| `lilbrain_callers` | Full call graph for a function |
+| `lilbrain_search` | Search everything: functions, classes, sections, constants |
+| `lilbrain_file` | File info: functions, classes, sections, language |
+| `lilbrain_read` | Read source code of a function or file region |
+| `lilbrain_subsystem` | Deep dive into a subsystem |
+| `lilbrain_pipeline` | Trace a pipeline (parse, validate, compile, etc.) |
+| `lilbrain_dataflow` | Upstream callers and downstream callees |
+| `lilbrain_trace` | Depth-limited call chain trace |
+| `lilbrain_hotspots` | Most connected functions (highest fan-in + fan-out) |
+| `lilbrain_architecture` | Architecture map: subsystems and cross-dependencies |
 
 ### Impact & Quality (4)
 
 | Tool | Description |
 |------|-------------|
-| `ezgraph_impact` | Blast radius analysis — change a function, see everything affected |
-| `ezgraph_deadcode` | Find functions with zero callers + LOC waste estimate |
-| `ezgraph_clones` | Detect near-duplicate functions (token Jaccard similarity) |
-| `ezgraph_diagram` | Auto-generate Mermaid or D2 architecture diagrams |
+| `lilbrain_impact` | Blast radius analysis — change a function, see everything affected |
+| `lilbrain_deadcode` | Find functions with zero callers + LOC waste estimate |
+| `lilbrain_clones` | Detect near-duplicate functions (token Jaccard similarity) |
+| `lilbrain_diagram` | Auto-generate Mermaid or D2 architecture diagrams |
 
 ### Intelligence (4)
 
 | Tool | Description |
 |------|-------------|
-| `ezgraph_complexity` | Cyclomatic + cognitive complexity ranking |
-| `ezgraph_complexity_velocity` | Track complexity changes over git history |
-| `ezgraph_semantic` | Semantic search — find functions by meaning, not name |
-| `ezgraph_federation` | Multi-repo federated search across codebases |
+| `lilbrain_complexity` | Cyclomatic + cognitive complexity ranking |
+| `lilbrain_complexity_velocity` | Track complexity changes over git history |
+| `lilbrain_semantic` | Semantic search — find functions by meaning, not name |
+| `lilbrain_federation` | Multi-repo federated search across codebases |
 
 ### Tier 3 — AI-Native (4)
 
 | Tool | Description |
 |------|-------------|
-| `ezgraph_ask` | Natural language questions — auto-routes to the right analysis |
-| `ezgraph_diff` | Git-aware graph diff: changed functions, blast radius, risk |
-| `ezgraph_pr_review` | Auto-generate PR review context with risk assessment |
-| `ezgraph_runtime` | Correlate OpenTelemetry traces with static call graph |
+| `lilbrain_ask` | Natural language questions — auto-routes to the right analysis |
+| `lilbrain_diff` | Git-aware graph diff: changed functions, blast radius, risk |
+| `lilbrain_pr_review` | Auto-generate PR review context with risk assessment |
+| `lilbrain_runtime` | Correlate OpenTelemetry traces with static call graph |
 
 ## Features
 
 ### Impact Analysis
 
-Change a function? EZgraph tells you exactly what breaks:
+Change a function? LiLBrain tells you exactly what breaks:
 
 ```
-ezgraph_impact("parse_request")
+lilbrain_impact("parse_request")
 → 47 functions affected across 5 subsystems
 → Risk: HIGH
 → Subsystems: api, auth, middleware, handlers, tests
@@ -150,7 +150,7 @@ ezgraph_impact("parse_request")
 Generate always-accurate Mermaid diagrams from live code:
 
 ```
-ezgraph_diagram("architecture")
+lilbrain_diagram("architecture")
 → graph TD
       api["api\n120 fns | 3400 LOC"]
       auth["auth\n45 fns | 1200 LOC"]
@@ -160,11 +160,11 @@ ezgraph_diagram("architecture")
 ### Dead Code & Clone Detection
 
 ```
-ezgraph_deadcode()
+lilbrain_deadcode()
 → 847/3200 functions unreachable (26.5%)
 → 12,400 LOC wasted
 
-ezgraph_clones()
+lilbrain_clones()
 → adam_step <-> adamw_step (88.5% similar)
 → tcp_recv <-> udp_recv (83.3% similar)
 ```
@@ -174,7 +174,7 @@ ezgraph_clones()
 Find functions by what they do, not what they're named:
 
 ```
-ezgraph_semantic("handle user authentication")
+lilbrain_semantic("handle user authentication")
 → verify_token (auth/jwt.py:45) score=14.2
 → check_session (middleware/session.rs:120) score=11.8
 → validate_credentials (api/login.go:33) score=9.4
@@ -183,27 +183,27 @@ ezgraph_semantic("handle user authentication")
 ### Natural Language Queries
 
 ```
-ezgraph_ask("what is the most complex code?")
+lilbrain_ask("what is the most complex code?")
 → eval_stmt: cyclomatic=189, cognitive=198
 → lex: cyclomatic=171, cognitive=182
 
-ezgraph_ask("show me dead code")
+lilbrain_ask("show me dead code")
 → 847 functions with zero callers...
 
-ezgraph_ask("who calls parse_request?")
+lilbrain_ask("who calls parse_request?")
 → handle_http, route_api, middleware_chain...
 ```
 
 ### Git Time-Travel & PR Review
 
 ```
-ezgraph_diff("main", "feature-branch")
+lilbrain_diff("main", "feature-branch")
 → 12 files changed, 34 functions modified
 → Blast radius: 156 functions affected
 → Risk: HIGH
 → New cross-subsystem edge: api -> payments (didn't exist before!)
 
-ezgraph_pr_review()
+lilbrain_pr_review()
 → **8 files changed**, **23 functions modified**
 → **Blast radius**: 89 functions potentially affected
 → **Risk**: MEDIUM
@@ -216,7 +216,7 @@ ezgraph_pr_review()
 Search across all your repos at once:
 
 ```
-ezgraph_federation(query="authenticate", repos=["/app/api", "/app/auth", "/app/gateway"])
+lilbrain_federation(query="authenticate", repos=["/app/api", "/app/auth", "/app/gateway"])
 → api: 3 matches
 → auth: 12 matches
 → gateway: 5 matches
@@ -227,14 +227,14 @@ ezgraph_federation(query="authenticate", repos=["/app/api", "/app/auth", "/app/g
 Connect static analysis to production reality:
 
 ```
-ezgraph_runtime(trace_dir="traces/")
+lilbrain_runtime(trace_dir="traces/")
 → Hot paths: handle_request (45,000 calls, avg 2.3ms)
 → Cold code: legacy_handler (0 invocations — truly dead)
 ```
 
 ## Auto-Reindex
 
-EZgraph watches for file changes and a `.graph-dirty` sentinel file. Touch `.graph-dirty` in your project root (e.g., from a git post-commit hook) and the graph rebuilds automatically on the next query.
+LiLBrain watches for file changes and a `.graph-dirty` sentinel file. Touch `.graph-dirty` in your project root (e.g., from a git post-commit hook) and the graph rebuilds automatically on the next query.
 
 ```bash
 # Add to .git/hooks/post-commit:
